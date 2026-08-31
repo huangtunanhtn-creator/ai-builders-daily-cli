@@ -3,6 +3,7 @@ node_modules/
 .DS_Store
 outputs/
 *.html
+!src/newspaper.html
 *.json
 !examples/*.json
 !src/*.json
