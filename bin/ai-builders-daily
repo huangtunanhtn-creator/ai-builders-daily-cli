@@ -1,0 +1,281 @@
+#!/usr/bin/env node
+// AI Builders 日报 CLI
+// 把内容 JSON 渲染成钉钉文档 JSONML 与双栏 HTML，支持 DingTalk 文档发布。
+
+const fs = require("fs");
+const path = require("path");
+const { spawnSync } = require("child_process");
+
+const PKG_ROOT = path.resolve(__dirname, "..");
+const PY_BUILD_JSONML = path.join(PKG_ROOT, "src", "build-dingdoc-jsonml.py");
+const PY_RENDER_HTML = path.join(PKG_ROOT, "src", "render-html.py");
+const SCHEMA_PATH = path.join(PKG_ROOT, "src", "schema.json");
+const EXAMPLE_PATH = path.join(PKG_ROOT, "examples", "content.example.json");
+
+function usage() {
+  console.log(`
+Usage: ai-builders-daily <command> [options]
+
+Commands:
+  validate <content.json>              校验内容 JSON 结构
+  render jsonml <content.json>         渲染钉钉文档 JSONML
+    -o, --output <out.json>            输出文件路径（默认 newspaper.json）
+  render html <content.json>           渲染双栏 HTML 报纸
+    -o, --output <out.html>            输出文件路径（默认 newspaper.html）
+  publish --content <content.json>     发布/覆写到钉钉文档
+    --node <docNodeId>                 钉钉文档 node id
+    --title <title>                    文档标题（默认使用内容里的日期）
+  im-message <content.json>            生成小Q 提醒短消息文本
+    --doc-url <url>                    钉钉文档 URL
+  init <content.json>                  从示例生成一份可编辑的内容 JSON
+
+Examples:
+  ai-builders-daily validate examples/content.example.json
+  ai-builders-daily render jsonml content.json -o /tmp/newspaper.json
+  ai-builders-daily render html content.json -o outputs/2026-08-31.html
+  ai-builders-daily publish --content content.json --node o14dA3GK8gdADMzmHEprXA6lW9ekBD76 --title "2026-08-31"
+`);
+}
+
+function fail(msg) {
+  console.error("Error:", msg);
+  process.exit(1);
+}
+
+function readJson(p) {
+  if (!fs.existsSync(p)) fail(`file not found: ${p}`);
+  try {
+    return JSON.parse(fs.readFileSync(p, "utf-8"));
+  } catch (e) {
+    fail(`invalid JSON: ${p} — ${e.message}`);
+  }
+}
+
+function runPython(script, args) {
+  const py = process.env.PYTHON || "python3";
+  const result = spawnSync(py, [script, ...args], {
+    stdio: ["inherit", "pipe", "pipe"],
+    encoding: "utf-8",
+  });
+  if (result.error) fail(`failed to run python: ${result.error.message}`);
+  if (result.status !== 0) {
+    fail(
+      `python script failed (exit ${result.status}):\n${result.stderr || result.stdout}`
+    );
+  }
+  return result.stdout;
+}
+
+function runShell(cmd, args, opts = {}) {
+  const result = spawnSync(cmd, args, {
+    stdio: ["inherit", "pipe", "pipe"],
+    encoding: "utf-8",
+    ...opts,
+  });
+  if (result.error) fail(`failed to run ${cmd}: ${result.error.message}`);
+  if (result.status !== 0) {
+    fail(`${cmd} failed (exit ${result.status}):\n${result.stderr || result.stdout}`);
+  }
+  return result.stdout;
+}
+
+function parseArgs(argv) {
+  const out = { _: [], flags: {} };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "-o" || a === "--output" || a === "--content" || a === "--node" || a === "--title" || a === "--doc-url") {
+      out.flags[a.replace(/^-+/, "")] = argv[++i];
+    } else if (a.startsWith("--")) {
+      const eq = a.indexOf("=");
+      if (eq > 0) {
+        out.flags[a.slice(2, eq)] = a.slice(eq + 1);
+      } else {
+        out.flags[a.slice(2)] = "true";
+      }
+    } else if (a.startsWith("-") && a.length === 2) {
+      out.flags[a.slice(1)] = argv[++i];
+    } else {
+      out._.push(a);
+    }
+  }
+  return out;
+}
+
+function validateContent(data, schema) {
+  const required = schema.required || [];
+  for (const key of required) {
+    if (!(key in data)) fail(`missing required field: ${key}`);
+  }
+  // 校验 links 非空
+  function checkLinks(links, ctx) {
+    if (!links || links.length === 0) fail(`${ctx}: links must not be empty`);
+    for (const link of links) {
+      if (!Array.isArray(link) || link.length !== 2 || !link[1]) {
+        fail(`${ctx}: each link must be [label, url]`);
+      }
+      if (!/^https?:\/\//.test(link[1])) {
+        fail(`${ctx}: invalid url ${link[1]}`);
+      }
+    }
+  }
+  if (data.headline?.links) checkLinks(data.headline.links, "headline.links");
+  for (const sec of data.sections || []) {
+    for (const it of sec.items || []) {
+      if (it.links) checkLinks(it.links, `${sec.name}.${it.lead}.links`);
+    }
+  }
+  for (const f of data.features || []) {
+    if (f.links) checkLinks(f.links, `features.${f.title}.links`);
+  }
+  for (const q of data.quotes || []) {
+    if (!q.link) fail(`quotes: link is required`);
+  }
+  return true;
+}
+
+function generateImMessage(data, docUrl) {
+  const date = data.dateline || "";
+  const stats = data.stats || "";
+  const headline = data.headline || {};
+  const briefs = [];
+  for (const sec of data.sections || []) {
+    for (const it of sec.items || []) {
+      // 优先用显式摘要，否则取正文前 15 字
+      const raw = it.imSummary || (it.body || "").replace(/^\s+/, "");
+      const text = raw.slice(0, 15) + (raw.length > 15 ? "…" : "");
+      if (text) briefs.push(text);
+    }
+  }
+  for (const f of data.features || []) {
+    const raw = f.imSummary || f.title || "";
+    const text = raw.slice(0, 15) + (raw.length > 15 ? "…" : "");
+    if (text) briefs.push(text);
+  }
+  const topBriefs = briefs.slice(0, 6).join("、") || "暂无";
+  const quote = data.quotes && data.quotes[0]
+    ? `\n\n"${data.quotes[0].quote}"`
+    : "";
+  return `AI Builders 日报 · ${date}\n${stats}\n\n今日头条：${headline.deck || headline.title || ""}${quote}\n\n另外值得看：${topBriefs}\n\n全文报纸版（钉钉文档，点开直接读）：\n${docUrl || ""}`;
+}
+
+function cmdValidate(args) {
+  const contentPath = args._[0];
+  if (!contentPath) fail("usage: ai-builders-daily validate <content.json>");
+  const data = readJson(contentPath);
+  const schema = readJson(SCHEMA_PATH);
+  validateContent(data, schema);
+  console.log("✓ content JSON is valid");
+}
+
+function cmdRenderJsonml(args) {
+  const contentPath = args._[0];
+  if (!contentPath) fail("usage: ai-builders-daily render jsonml <content.json>");
+  const output = args.flags.output || args.flags.o || "newspaper.json";
+  const data = readJson(contentPath);
+  const schema = readJson(SCHEMA_PATH);
+  validateContent(data, schema);
+  const stdout = runPython(PY_BUILD_JSONML, [contentPath, output]);
+  process.stdout.write(stdout);
+}
+
+function cmdRenderHtml(args) {
+  const contentPath = args._[0];
+  if (!contentPath) fail("usage: ai-builders-daily render html <content.json>");
+  const output = args.flags.output || args.flags.o || "newspaper.html";
+  const data = readJson(contentPath);
+  const schema = readJson(SCHEMA_PATH);
+  validateContent(data, schema);
+  const stdout = runPython(PY_RENDER_HTML, [contentPath, output]);
+  process.stdout.write(stdout);
+}
+
+function cmdPublish(args) {
+  const contentPath = args.flags.content;
+  const node = args.flags.node;
+  const title = args.flags.title;
+  if (!contentPath || !node) {
+    fail("usage: ai-builders-daily publish --content <content.json> --node <nodeId> [--title <title>]");
+  }
+  const data = readJson(contentPath);
+  const schema = readJson(SCHEMA_PATH);
+  validateContent(data, schema);
+
+  const tmpJsonml = path.join(require("os").tmpdir(), `newspaper-${Date.now()}.json`);
+  runPython(PY_BUILD_JSONML, [contentPath, tmpJsonml]);
+
+  const docTitle = title || data.dateline || "AI Builders 日报";
+  runShell("dws", [
+    "doc", "update",
+    "--node", node,
+    "--content-file", tmpJsonml,
+    "--content-format", "jsonml",
+    "--mode", "overwrite",
+    "--yes",
+  ]);
+
+  // 设置标题
+  runShell("dws", ["doc", "update", "--node", node, "--title", docTitle]);
+
+  console.log(`✓ published to node ${node} with title "${docTitle}"`);
+  console.log("  verify with: dws doc read --node", node);
+  console.log("  jsonml verify: dws doc read --node", node, "--content-format jsonml");
+}
+
+function cmdImMessage(args) {
+  const contentPath = args._[0];
+  const docUrl = args.flags["doc-url"] || "";
+  if (!contentPath) fail("usage: ai-builders-daily im-message <content.json> --doc-url <url>");
+  const data = readJson(contentPath);
+  const schema = readJson(SCHEMA_PATH);
+  validateContent(data, schema);
+  const msg = generateImMessage(data, docUrl);
+  console.log(msg);
+  if (msg.length > 300) {
+    console.error(`\nWarning: message is ${msg.length} chars, exceeds 300-char limit for qoder_delegate_to_im.`);
+  }
+}
+
+function cmdInit(args) {
+  const outPath = args._[0] || "content.json";
+  if (fs.existsSync(outPath)) fail(`file already exists: ${outPath}`);
+  fs.copyFileSync(EXAMPLE_PATH, outPath);
+  console.log(`✓ created ${outPath} from example`);
+}
+
+function main() {
+  const argv = process.argv.slice(2);
+  if (argv.length === 0 || argv[0] === "-h" || argv[0] === "--help") {
+    usage();
+    process.exit(0);
+  }
+  const command = argv[0];
+  const args = parseArgs(argv.slice(1));
+
+  switch (command) {
+    case "validate":
+      cmdValidate(args);
+      break;
+    case "render":
+      if (args._[0] === "jsonml") {
+        cmdRenderJsonml({ _: args._.slice(1), flags: args.flags });
+      } else if (args._[0] === "html") {
+        cmdRenderHtml({ _: args._.slice(1), flags: args.flags });
+      } else {
+        fail("render subcommand must be 'jsonml' or 'html'");
+      }
+      break;
+    case "publish":
+      cmdPublish(args);
+      break;
+    case "im-message":
+      cmdImMessage(args);
+      break;
+    case "init":
+      cmdInit(args);
+      break;
+    default:
+      fail(`unknown command: ${command}`);
+  }
+}
+
+main();

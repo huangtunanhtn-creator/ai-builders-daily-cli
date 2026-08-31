@@ -1,0 +1,120 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AI Builders Daily Content JSON",
+  "description": "《AI Builders 日报》内容结构化格式，供渲染成钉钉文档 JSONML 与双栏 HTML。",
+  "type": "object",
+  "required": ["masthead", "dateline", "stats", "headline", "colophon"],
+  "properties": {
+    "masthead": {
+      "type": "string",
+      "description": "报名，如《AI Builders 日报》"
+    },
+    "dateline": {
+      "type": "string",
+      "description": "日期行，如 2026年8月27日 星期四"
+    },
+    "stats": {
+      "type": "string",
+      "description": "统计行，如 17 位 builder · 32 条动态 · 1 期播客"
+    },
+    "colophon": {
+      "type": "string",
+      "description": "报尾文案"
+    },
+    "headline": {
+      "type": "object",
+      "required": ["title", "deck", "paras", "links"],
+      "properties": {
+        "title": { "type": "string", "description": "头条中文标题，带【头条】" },
+        "deck": { "type": "string", "description": "导语，一句话不超过 40 字" },
+        "paras": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "头条正文段落，会拆成双栏"
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": { "type": "string" }
+          },
+          "description": "链接列表，每项为 [label, url]"
+        }
+      }
+    },
+    "sections": {
+      "type": "array",
+      "description": "分版块短讯栏目，只保留当天有内容的",
+      "items": {
+        "type": "object",
+        "required": ["name", "items"],
+        "properties": {
+          "name": { "type": "string", "description": "栏目名，如【产品与发布】" },
+          "layout": { "type": "string", "enum": ["columns"], "default": "columns" },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["lead", "body", "links"],
+              "properties": {
+                "lead": { "type": "string", "description": "加粗的人物身份加姓名" },
+                "body": { "type": "string", "description": "2 到 3 句话短讯正文" },
+                "links": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "features": {
+      "type": "array",
+      "description": "深度长文/播客，通常 0 或 1 条",
+      "items": {
+        "type": "object",
+        "required": ["name", "title", "paras", "links"],
+        "properties": {
+          "name": { "type": "string", "default": "深度" },
+          "title": { "type": "string" },
+          "deck": { "type": "string" },
+          "paras": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "quotes": {
+      "type": "array",
+      "description": "今日金句，1 到 3 句",
+      "items": {
+        "type": "object",
+        "required": ["quote", "attrib", "zh", "link"],
+        "properties": {
+          "quote": { "type": "string", "description": "英文原文，逐字照抄" },
+          "attrib": { "type": "string", "description": "姓名，身份" },
+          "zh": { "type": "string", "description": "中文意译一句" },
+          "link": { "type": "string", "format": "uri" }
+        }
+      }
+    }
+  }
+}

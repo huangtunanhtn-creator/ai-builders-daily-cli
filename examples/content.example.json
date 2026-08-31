@@ -1,0 +1,61 @@
+{
+  "masthead": "《AI Builders 日报》",
+  "dateline": "2026年8月31日 星期一",
+  "stats": "12 位 builder · 24 条动态 · 0 期播客",
+  "colophon": "Generated through the Follow Builders skill: https://github.com/zarazhangrui/follow-builders",
+  "headline": {
+    "title": "【头条】OpenAI 把 Canvas 推向所有用户，写作与编码场景开始分流",
+    "deck": "Canvas 从 Plus 专属变成默认界面，意味着 ChatGPT 不再只做问答。",
+    "paras": [
+      "Sam Altman 在 X 上宣布 Canvas 已向免费用户开放。这个新界面把长文档和代码项目从对话流里拆出来，左侧是可折叠的编辑区，右侧保留模型侧边栏。对每天需要改稿、改代码的人来说，这比在滚动聊天里翻历史舒服得多。",
+      "更值得注意的信号是产品定位：ChatGPT 正在从通用聊天工具变成可切换视图的工作台。竞争对手要么跟进类似布局，要么在 Agent 自动化上拉开差异。"
+    ],
+    "links": [
+      ["OpenAI 公告", "https://openai.com/index/introducing-canvas/"]
+    ]
+  },
+  "sections": [
+    {
+      "name": "【产品与发布】",
+      "layout": "columns",
+      "items": [
+        {
+          "lead": "Vercel 首席执行官 Guillermo Rauch",
+          "body": "v0 支持直接导入 Figma 设计稿并生成可部署的 Next.js 页面，Rauch 称这是把设计文件变成生产代码的最短路径。",
+          "links": [
+            ["v0 更新", "https://v0.dev/blog/figma-import"]
+          ]
+        },
+        {
+          "lead": "Anthropic 官方账号",
+          "body": "Claude 3.5 Sonnet 在 AWS Bedrock 上线，企业客户可以用现有 IAM 和 VPC 配置直接调用。",
+          "links": [
+            ["Bedrock 文档", "https://docs.aws.amazon.com/bedrock/"]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "【观点与争议】",
+      "layout": "columns",
+      "items": [
+        {
+          "lead": "前 OpenAI 研究员 Andrej Karpathy",
+          "body": "Karpathy 认为下一代模型竞争将从参数规模转向训练后基础设施：eval、RL、合成数据流水线才是真正的护城河。",
+          "links": [
+            ["推文", "https://x.com/karpathy/status/1234567890"]
+          ]
+        }
+      ]
+    }
+  ],
+  "features": [],
+  "quotes": [
+    {
+      "quote": "The interface is the product.",
+      "attrib": "Guillermo Rauch，Vercel 首席执行官",
+      "zh": "界面就是产品本身。",
+      "link": "https://x.com/rauchg/status/1234567890"
+    }
+  ]
+}
