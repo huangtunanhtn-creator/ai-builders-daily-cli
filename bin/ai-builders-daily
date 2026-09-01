@@ -134,7 +134,8 @@ function validateContent(data, schema) {
 }
 
 function generateImMessage(data, docUrl) {
-  const date = data.dateline || "";
+  // 日期只保留 M月D日，避免过长
+  const date = (data.dateline || "").replace(/^\d{4}年/, "").replace(/\s*星期[一二三四五六日]/, "");
   const stats = data.stats || "";
   const headline = data.headline || {};
   const briefs = [];
@@ -152,10 +153,7 @@ function generateImMessage(data, docUrl) {
     if (text) briefs.push(text);
   }
   const topBriefs = briefs.slice(0, 6).join("、") || "暂无";
-  const quote = data.quotes && data.quotes[0]
-    ? `\n\n"${data.quotes[0].quote}"`
-    : "";
-  return `AI Builders 日报 · ${date}\n${stats}\n\n今日头条：${headline.deck || headline.title || ""}${quote}\n\n另外值得看：${topBriefs}\n\n全文报纸版（钉钉文档，点开直接读）：\n${docUrl || ""}`;
+  return `AI Builders 日报 · ${date}\n${stats}\n\n今日头条：${headline.deck || headline.title || ""}\n\n另外值得看：${topBriefs}\n\n全文报纸版（钉钉文档，点开直接读）：\n${docUrl || ""}`;
 }
 
 function cmdValidate(args) {
@@ -213,8 +211,8 @@ function cmdPublish(args) {
     "--yes",
   ]);
 
-  // 设置标题
-  runShell("dws", ["doc", "update", "--node", node, "--title", docTitle]);
+  // 设置标题（dws doc update 没有 --title，改用 rename）
+  runShell("dws", ["doc", "rename", "--node", node, "--name", docTitle, "--yes"]);
 
   console.log(`✓ published to node ${node} with title "${docTitle}"`);
   console.log("  verify with: dws doc read --node", node);
