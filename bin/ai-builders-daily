@@ -141,19 +141,39 @@ function generateImMessage(data, docUrl) {
   const briefs = [];
   for (const sec of data.sections || []) {
     for (const it of sec.items || []) {
-      // 优先用显式摘要，否则取正文前 15 字
+      // 优先用显式摘要，否则取正文前 12 字，确保总长在 300 以内
       const raw = it.imSummary || (it.body || "").replace(/^\s+/, "");
-      const text = raw.slice(0, 15) + (raw.length > 15 ? "…" : "");
+      const text = raw.slice(0, 12) + (raw.length > 12 ? "…" : "");
       if (text) briefs.push(text);
     }
   }
   for (const f of data.features || []) {
     const raw = f.imSummary || f.title || "";
-    const text = raw.slice(0, 15) + (raw.length > 15 ? "…" : "");
+    const text = raw.slice(0, 12) + (raw.length > 12 ? "…" : "");
     if (text) briefs.push(text);
   }
-  const topBriefs = briefs.slice(0, 6).join("、") || "暂无";
+  const topBriefs = briefs.slice(0, 5).join("、") || "暂无";
   return `AI Builders 日报 · ${date}\n${stats}\n\n今日头条：${headline.deck || headline.title || ""}\n\n另外值得看：${topBriefs}\n\n全文报纸版（钉钉文档，点开直接读）：\n${docUrl || ""}`;
+}
+
+function getDocTitle(node) {
+  const out = runShell("dws", ["doc", "read", "--node", node], { stdio: ["ignore", "pipe", "pipe"] });
+  try {
+    const json = JSON.parse(out);
+    return json.title || "";
+  } catch (e) {
+    return "";
+  }
+}
+
+function getDocJsonmlText(node) {
+  const out = runShell("dws", ["doc", "read", "--node", node, "--content-format", "jsonml"], { stdio: ["ignore", "pipe", "pipe"] });
+  try {
+    const json = JSON.parse(out);
+    return JSON.stringify(json.jsonml || []);
+  } catch (e) {
+    return "";
+  }
 }
 
 function cmdValidate(args) {
@@ -202,21 +222,43 @@ function cmdPublish(args) {
   runPython(PY_BUILD_JSONML, [contentPath, tmpJsonml]);
 
   const docTitle = title || data.dateline || "AI Builders 日报";
-  runShell("dws", [
-    "doc", "update",
-    "--node", node,
-    "--content-file", tmpJsonml,
-    "--content-format", "jsonml",
-    "--mode", "overwrite",
-    "--yes",
-  ]);
+  const mastheadMarker = (data.masthead || "AI Builders 日报").replace(/[《》]/g, "");
+  const maxRetries = 3;
 
-  // 设置标题（dws doc update 没有 --title，改用 rename）
-  runShell("dws", ["doc", "rename", "--node", node, "--name", docTitle, "--yes"]);
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    runShell("dws", [
+      "doc", "update",
+      "--node", node,
+      "--content-file", tmpJsonml,
+      "--content-format", "jsonml",
+      "--mode", "overwrite",
+      "--yes",
+    ]);
 
-  console.log(`✓ published to node ${node} with title "${docTitle}"`);
-  console.log("  verify with: dws doc read --node", node);
-  console.log("  jsonml verify: dws doc read --node", node, "--content-format jsonml");
+    // 设置标题（dws doc update 没有 --title，改用 rename）
+    runShell("dws", ["doc", "rename", "--node", node, "--name", docTitle, "--yes"]);
+
+    // 等待钉钉文档 eventual consistency
+    spawnSync("sleep", ["3"], { encoding: "utf-8" });
+
+    const actualTitle = getDocTitle(node);
+    const jsonmlText = getDocJsonmlText(node);
+    const hasMasthead = jsonmlText.includes(mastheadMarker);
+
+    if (actualTitle === docTitle && hasMasthead) {
+      console.log(`✓ published to node ${node} with title "${docTitle}" (attempt ${attempt})`);
+      console.log("  verify with: dws doc read --node", node);
+      console.log("  jsonml verify: dws doc read --node", node, "--content-format jsonml");
+      return;
+    }
+
+    console.error(`  attempt ${attempt} verification failed: title="${actualTitle}", hasMasthead=${hasMasthead}; retrying...`);
+    if (attempt < maxRetries) {
+      spawnSync("sleep", ["2"], { encoding: "utf-8" });
+    }
+  }
+
+  fail(`failed to publish after ${maxRetries} attempts; doc title or content did not match`);
 }
 
 function cmdImMessage(args) {
